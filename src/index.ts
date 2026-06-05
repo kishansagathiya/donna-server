@@ -2,6 +2,7 @@ import { serve } from '@hono/node-server';
 import { createNodeWebSocket } from '@hono/node-ws';
 import { Hono } from 'hono';
 import os from 'node:os';
+import { verifyAccessToken } from './auth.js';
 import { config } from './config.js';
 import { log } from './log.js';
 import { VoiceSession } from './session.js';
@@ -18,32 +19,66 @@ function lanAddresses(): string[] {
   return addrs;
 }
 
+async function verifyVoiceToken(token: string | undefined): Promise<string | null> {
+  if (!config.requireAuth) {
+    return null;
+  }
+
+  if (!token) {
+    throw new Error('missing_token');
+  }
+
+  const verified = await verifyAccessToken(token, {
+    supabaseUrl: config.supabaseUrl,
+    jwtAudience: config.jwtAudience,
+  });
+  return verified.userId;
+}
+
 const app = new Hono();
 const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 
 app.get('/health', (c) =>
-  c.json({ ok: true, service: 'donna-server' }),
+  c.json({
+    ok: true,
+    service: 'donna-server',
+    authRequired: config.requireAuth,
+  }),
 );
 
 app.get(
   '/voice',
-  upgradeWebSocket(() => {
+  upgradeWebSocket((c) => {
     let session: VoiceSession | null = null;
+    let userId: string | null = null;
+    let rejected = false;
 
     return {
-      onOpen(_event, ws) {
-        session = new VoiceSession(ws);
-        log('websocket connected');
+      async onOpen(_event, ws) {
+        try {
+          userId = await verifyVoiceToken(c.req.query('token'));
+          session = new VoiceSession(ws, { userId: userId ?? undefined });
+          log('websocket connected', { userId });
+        } catch (error) {
+          rejected = true;
+          const code =
+            error instanceof Error ? error.message : 'invalid_token';
+          log('websocket auth rejected', { code });
+          ws.close(4401, code);
+        }
       },
       async onMessage(event, ws) {
+        if (rejected) return;
+
         if (!session) {
-          session = new VoiceSession(ws);
+          session = new VoiceSession(ws, { userId: userId ?? undefined });
         }
         await session.handleMessage(event.data);
       },
       onClose() {
         log('websocket disconnected', {
           sessionId: session?.sessionId,
+          userId,
         });
         session = null;
       },
@@ -61,6 +96,7 @@ injectWebSocket(server);
 const port = config.port;
 log(`listening on http://${config.host}:${port}`);
 log(`health: http://127.0.0.1:${port}/health`);
+log(`voice auth: ${config.requireAuth ? 'required (Supabase JWT)' : 'disabled'}`);
 log(`voice (simulator): ws://127.0.0.1:${port}/voice`);
 for (const ip of lanAddresses()) {
   log(`voice (physical device): ws://${ip}:${port}/voice`);

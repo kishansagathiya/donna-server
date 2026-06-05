@@ -13,9 +13,14 @@ function required(name: string): string {
   return value;
 }
 
+const supabaseUrl = process.env.SUPABASE_URL?.replace(/\/$/, '') ?? '';
+
 export const config = {
   host: process.env.DONNA_HOST ?? '0.0.0.0',
   port: Number(process.env.DONNA_PORT ?? 8787),
+  supabaseUrl,
+  jwtAudience: process.env.JWT_AUDIENCE ?? 'authenticated',
+  requireAuth: !!supabaseUrl,
   openRouterApiKey: required('OPENROUTER_API_KEY'),
   openAiApiKey: process.env.OPENAI_API_KEY ?? '',
   cartesiaApiKey: process.env.CARTESIA_API_KEY ?? '',
