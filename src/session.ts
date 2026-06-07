@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { WSContext } from 'hono/ws';
 import type { ChatMessage } from './pipeline/providers/llm.js';
-import { runVoiceTurn } from './pipeline/turn.js';
+import { analyzePcm16 } from './pipeline/audioQuality.js';
+import { emptyTurnTimings, runVoiceTurn } from './pipeline/turn.js';
 import {
   parseClientMessage,
   serializeServerMessage,
@@ -29,6 +30,7 @@ export class VoiceSession {
   private started = false;
   private chunkCount = 0;
   private totalPcmBytes = 0;
+  private hasRetriedThisSession = false;
 
   constructor(
     ws: WSContext,
@@ -87,6 +89,7 @@ export class VoiceSession {
   }): Promise<void> {
     if (this.started) return;
     this.started = true;
+    this.hasRetriedThisSession = false;
     if (message.userId) this.userId = message.userId;
     if (message.sessionId) this.sessionId = message.sessionId;
     this.send({
@@ -182,38 +185,80 @@ export class VoiceSession {
     }
 
     const pcm = concatChunks(this.audioChunks);
-    const wav = pcm16ToWav(pcm, this.audioMeta);
+    const audioMeta = this.audioMeta;
+    const quality = analyzePcm16(
+      pcm,
+      audioMeta.sampleRate,
+      audioMeta.channels,
+    );
     const approxSeconds = estimatePcmSeconds(
       pcm.length,
-      this.audioMeta.sampleRate,
-      this.audioMeta.channels,
+      audioMeta.sampleRate,
+      audioMeta.channels,
     );
-    log('turn commit — running pipeline', {
-      session: shortId(this.sessionId),
-      chunks: this.chunkCount,
-      pcmBytes: pcm.length,
-      wavBytes: wav.length,
-      approxSeconds,
-    });
+    const committedChunks = this.chunkCount;
+    const committedPcmBytes = pcm.length;
     this.resetTurnBuffer();
     this.busy = true;
 
-    try {
-      const result = await runVoiceTurn(wav, this.history.slice(), {
-        onPhase: (phase) => this.sendPhase(phase),
-        onTranscript: (text) =>
-          this.send({ type: 'turn.transcript', text }),
-        onReply: (text) => this.send({ type: 'turn.reply', text }),
-        onAudioChunk: ({ seq, format, data }) =>
-          this.send({
-            type: 'audio.out',
-            seq,
-            format,
-            data: Buffer.from(data).toString('base64'),
-          }),
-      });
+    if (!quality.shouldProcess) {
+      try {
+        log('turn skipped — audio quality gate', {
+          session: shortId(this.sessionId),
+          reason: quality.reason,
+          approxSeconds,
+          avgRms: quality.avgRms,
+          peakRms: quality.peakRms,
+        });
+        this.send({
+          type: 'turn.done',
+          timings: emptyTurnTimings(),
+          skipped: true,
+        });
+        this.sendPhase('idle');
+      } finally {
+        this.busy = false;
+      }
+      return;
+    }
 
-      if (result.transcript.trim()) {
+    const wav = pcm16ToWav(pcm, audioMeta);
+    log('turn commit — running pipeline', {
+      session: shortId(this.sessionId),
+      chunks: committedChunks,
+      pcmBytes: committedPcmBytes,
+      wavBytes: wav.length,
+      approxSeconds,
+    });
+
+    try {
+      const result = await runVoiceTurn(
+        wav,
+        this.history.slice(),
+        {
+          onPhase: (phase) => this.sendPhase(phase),
+          onTranscript: (text) =>
+            this.send({ type: 'turn.transcript', text }),
+          onReply: (text) => this.send({ type: 'turn.reply', text }),
+          onAudioChunk: ({ seq, format, data }) =>
+            this.send({
+              type: 'audio.out',
+              seq,
+              format,
+              data: Buffer.from(data).toString('base64'),
+            }),
+        },
+        {
+          audioMeta: quality,
+          canRetry: !this.hasRetriedThisSession,
+        },
+      );
+
+      if (result.usedRetry) {
+        this.hasRetriedThisSession = true;
+      }
+
+      if (result.transcript.trim() && !result.skipped && !result.usedRetry) {
         this.appendHistory(result.transcript, result.replyText);
       }
 
@@ -221,9 +266,15 @@ export class VoiceSession {
         session: shortId(this.sessionId),
         transcript: result.transcript,
         replyPreview: result.replyText.slice(0, 80),
+        skipped: result.skipped,
+        skipReason: result.skipReason,
         timings: result.timings,
       });
-      this.send({ type: 'turn.done', timings: result.timings });
+      this.send({
+        type: 'turn.done',
+        timings: result.timings,
+        skipped: result.skipped,
+      });
       this.sendPhase('idle');
     } catch (err) {
       const message =

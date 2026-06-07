@@ -31,6 +31,6 @@ export const config = {
     process.env.DONNA_STT_MODEL ?? 'mistralai/voxtral-mini-transcribe',
   systemPrompt:
     process.env.DONNA_SYSTEM_PROMPT ??
-    'You are Donna, a warm and concise voice assistant. Keep replies short and conversational — one or two sentences unless the user asks for detail.',
+    'You are Donna, a warm and concise voice assistant. Keep replies short and conversational — one or two sentences unless the user asks for detail. Never ask the user to repeat themselves. If input is unclear, give your best short guess or a brief helpful reply.',
   maxHistoryMessages: 20,
 };

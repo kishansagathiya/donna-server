@@ -40,6 +40,7 @@ export type ServerMessage =
         ttsFirstByteMs: number;
         totalMs: number;
       };
+      skipped?: boolean;
     }
   | { type: 'error'; code: string; message: string };
 
