@@ -16,6 +16,11 @@ export type TurnTimings = {
   totalMs: number;
 };
 
+export type AssistantAudio = {
+  format: 'mp3' | 'wav';
+  data: Uint8Array;
+};
+
 export type TurnResult = {
   transcript: string;
   replyText: string;
@@ -23,6 +28,7 @@ export type TurnResult = {
   skipped?: boolean;
   skipReason?: string;
   usedRetry?: boolean;
+  assistantAudio?: AssistantAudio;
 };
 
 export type TurnCallbacks = {
@@ -39,6 +45,8 @@ export type TurnCallbacks = {
 export type TurnOptions = {
   audioMeta: AudioQualityMeta;
   canRetry: boolean;
+  userId: string;
+  sessionId: string;
 };
 
 const RETRY_PROMPT = 'Sorry, I missed that — what were you saying?';
@@ -93,8 +101,8 @@ export async function runVoiceTurn(
   const augStart = performance.now();
   const augmented = await defaultAugment({
     transcript,
-    userId: 'user',
-    sessionId: 'session',
+    userId: options.userId,
+    sessionId: options.sessionId,
   });
   timings.augmentMs = Math.round(performance.now() - augStart);
 
@@ -118,12 +126,16 @@ export async function runVoiceTurn(
   callbacks.onReply?.(replyText);
 
   phase('synthesizing');
-  await streamTtsToClient(replyText, callbacks, timings);
+  const assistantAudio = await streamTtsToClient(
+    replyText,
+    callbacks,
+    timings,
+  );
 
   timings.totalMs = Math.round(performance.now() - t0);
   phase('done');
 
-  return { transcript, replyText, timings };
+  return { transcript, replyText, timings, assistantAudio };
 }
 
 function finishSkipped(
@@ -147,22 +159,43 @@ async function streamTtsToClient(
   text: string,
   callbacks: TurnCallbacks,
   timings: TurnTimings,
-): Promise<void> {
+): Promise<AssistantAudio | undefined> {
   const ttsStart = performance.now();
   let firstByte = true;
   let seq = 0;
+  const parts: Uint8Array[] = [];
+  let format: 'mp3' | 'wav' | null = null;
 
   for await (const chunk of synthesizeSpeech(text)) {
     if (firstByte) {
       timings.ttsFirstByteMs = Math.round(performance.now() - ttsStart);
       firstByte = false;
     }
+    format = chunk.format;
+    parts.push(chunk.data);
     callbacks.onAudioChunk?.({
       seq: seq++,
       format: chunk.format,
       data: chunk.data,
     });
   }
+
+  if (!format || parts.length === 0) {
+    return undefined;
+  }
+
+  return { format, data: concatChunks(parts) };
+}
+
+function concatChunks(chunks: Uint8Array[]): Uint8Array {
+  const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return out;
 }
 
 export function emptyTurnTimings(): TurnTimings {

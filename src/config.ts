@@ -14,13 +14,16 @@ function required(name: string): string {
 }
 
 const supabaseUrl = process.env.SUPABASE_URL?.replace(/\/$/, '') ?? '';
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
 
 export const config = {
   host: process.env.DONNA_HOST ?? '0.0.0.0',
   port: Number(process.env.DONNA_PORT ?? 8787),
   supabaseUrl,
+  supabaseServiceRoleKey,
   jwtAudience: process.env.JWT_AUDIENCE ?? 'authenticated',
   requireAuth: !!supabaseUrl,
+  persistConversations: !!supabaseUrl && !!supabaseServiceRoleKey,
   openRouterApiKey: required('OPENROUTER_API_KEY'),
   openAiApiKey: process.env.OPENAI_API_KEY ?? '',
   cartesiaApiKey: process.env.CARTESIA_API_KEY ?? '',

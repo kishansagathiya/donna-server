@@ -87,6 +87,7 @@ app.get(
         await session.handleMessage(event.data);
       },
       onClose() {
+        session?.end();
         log('websocket disconnected', {
           sessionId: session?.sessionId,
           userId,
@@ -109,6 +110,9 @@ const port = config.port;
 log(`listening on http://${config.host}:${port}`);
 log(`health: http://127.0.0.1:${port}/health`);
 log(`voice auth: ${config.requireAuth ? 'required (Supabase JWT)' : 'disabled'}`);
+log(
+  `conversation persistence: ${config.persistConversations ? 'enabled' : 'disabled'}`,
+);
 log(`voice (simulator): ws://127.0.0.1:${port}/voice`);
 for (const ip of lanAddresses()) {
   log(`voice (physical device): ws://${ip}:${port}/voice`);

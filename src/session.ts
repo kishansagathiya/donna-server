@@ -12,6 +12,12 @@ import {
 import { pcm16ToWav } from './wav.js';
 import { config } from './config.js';
 import { log, logWarn, shortId } from './log.js';
+import {
+  createConversation,
+  endConversationAsync,
+  isConversationPersistenceEnabled,
+  persistTurnAsync,
+} from './storage/conversations.js';
 
 type AudioChunkMeta = {
   format: 'pcm16';
@@ -31,6 +37,9 @@ export class VoiceSession {
   private chunkCount = 0;
   private totalPcmBytes = 0;
   private hasRetriedThisSession = false;
+  private conversationId: string | null = null;
+  private turnIndex = 0;
+  private ended = false;
 
   constructor(
     ws: WSContext,
@@ -77,6 +86,7 @@ export class VoiceSession {
         log('← session.end', { session: shortId(this.sessionId) });
         this.resetTurnBuffer();
         this.sendPhase('idle');
+        this.end();
         break;
       default:
         this.sendError('unknown_type', 'Unknown message type');
@@ -102,6 +112,28 @@ export class VoiceSession {
       session: shortId(this.sessionId),
       user: shortId(this.userId),
     });
+
+    if (isConversationPersistenceEnabled() && config.requireAuth) {
+      try {
+        this.conversationId = await createConversation(
+          this.userId,
+          this.sessionId,
+        );
+      } catch (err) {
+        logWarn('failed to create conversation', {
+          session: shortId(this.sessionId),
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  }
+
+  end(): void {
+    if (this.ended) return;
+    this.ended = true;
+    if (this.conversationId) {
+      endConversationAsync(this.conversationId);
+    }
   }
 
   private handleAudioChunk(message: {
@@ -251,6 +283,8 @@ export class VoiceSession {
         {
           audioMeta: quality,
           canRetry: !this.hasRetriedThisSession,
+          userId: this.userId,
+          sessionId: this.sessionId,
         },
       );
 
@@ -276,6 +310,29 @@ export class VoiceSession {
         skipped: result.skipped,
       });
       this.sendPhase('idle');
+
+      if (
+        this.conversationId &&
+        result.transcript.trim() &&
+        !result.skipped &&
+        !result.usedRetry &&
+        result.assistantAudio
+      ) {
+        const conversationId = this.conversationId;
+        const turnIndex = this.turnIndex;
+        this.turnIndex += 1;
+        persistTurnAsync({
+          conversationId,
+          userId: this.userId,
+          turnIndex,
+          userTranscript: result.transcript,
+          assistantTranscript: result.replyText,
+          userWav: wav,
+          assistantAudio: result.assistantAudio.data,
+          assistantFormat: result.assistantAudio.format,
+          timings: result.timings,
+        });
+      }
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'Turn processing failed';
