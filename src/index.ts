@@ -1,6 +1,7 @@
 import { serve } from '@hono/node-server';
 import { createNodeWebSocket } from '@hono/node-ws';
 import { Hono } from 'hono';
+import type { WSContext } from 'hono/ws';
 import os from 'node:os';
 import { verifyAccessToken } from './auth.js';
 import { config } from './config.js';
@@ -52,27 +53,37 @@ app.get(
     let session: VoiceSession | null = null;
     let userId: string | null = null;
     let rejected = false;
+    let initPromise: Promise<void> | null = null;
+
+    const initSession = (ws: WSContext): Promise<void> => {
+      if (!initPromise) {
+        initPromise = (async () => {
+          try {
+            userId = await verifyVoiceToken(c.req.query('token'));
+            session = new VoiceSession(ws, { userId: userId ?? undefined });
+            log('websocket connected', { userId });
+          } catch (error) {
+            rejected = true;
+            const code =
+              error instanceof Error ? error.message : 'invalid_token';
+            log('websocket auth rejected', { code });
+            ws.close(4401, code);
+          }
+        })();
+      }
+      return initPromise;
+    };
 
     return {
-      async onOpen(_event, ws) {
-        try {
-          userId = await verifyVoiceToken(c.req.query('token'));
-          session = new VoiceSession(ws, { userId: userId ?? undefined });
-          log('websocket connected', { userId });
-        } catch (error) {
-          rejected = true;
-          const code =
-            error instanceof Error ? error.message : 'invalid_token';
-          log('websocket auth rejected', { code });
-          ws.close(4401, code);
-        }
+      onOpen(_event, ws) {
+        void initSession(ws);
       },
       async onMessage(event, ws) {
         if (rejected) return;
 
-        if (!session) {
-          session = new VoiceSession(ws, { userId: userId ?? undefined });
-        }
+        await initSession(ws);
+        if (!session) return;
+
         await session.handleMessage(event.data);
       },
       onClose() {
@@ -81,6 +92,7 @@ app.get(
           userId,
         });
         session = null;
+        initPromise = null;
       },
     };
   }),
