@@ -74,3 +74,62 @@ export function buildLlmMessages(
     { role: 'user', content: userMessage },
   ];
 }
+
+export async function completeOnce(messages: ChatMessage[]): Promise<string> {
+  const res = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
+    method: 'POST',
+    headers: openRouterHeaders(),
+    body: JSON.stringify({
+      model: config.llmModel,
+      messages,
+      stream: false,
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(
+      `OpenRouter LLM ${res.status}: ${await res.text()}`,
+    );
+  }
+
+  const body = (await res.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+
+  return body.choices?.[0]?.message?.content?.trim() ?? '';
+}
+
+export async function completeOnceVision(
+  prompt: string,
+  imageDataUrl: string,
+): Promise<string> {
+  const res = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
+    method: 'POST',
+    headers: openRouterHeaders(),
+    body: JSON.stringify({
+      model: config.llmModel,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            { type: 'image_url', image_url: { url: imageDataUrl } },
+          ],
+        },
+      ],
+      stream: false,
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(
+      `OpenRouter vision ${res.status}: ${await res.text()}`,
+    );
+  }
+
+  const body = (await res.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+
+  return body.choices?.[0]?.message?.content?.trim() ?? '';
+}

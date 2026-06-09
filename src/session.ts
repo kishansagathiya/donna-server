@@ -12,6 +12,7 @@ import {
 import { pcm16ToWav } from './wav.js';
 import { config } from './config.js';
 import { log, logWarn, shortId } from './log.js';
+import { enqueueSessionCompile } from './knowledge/queue.js';
 import {
   createConversation,
   endConversationAsync,
@@ -132,7 +133,9 @@ export class VoiceSession {
     if (this.ended) return;
     this.ended = true;
     if (this.conversationId) {
-      endConversationAsync(this.conversationId);
+      const conversationId = this.conversationId;
+      endConversationAsync(conversationId);
+      enqueueSessionCompile(this.userId, conversationId);
     }
   }
 

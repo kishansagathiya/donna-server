@@ -1,4 +1,5 @@
 import { defaultAugment } from './augment.js';
+import { getUserProfileSummary, isKnowledgeEnabled } from '../storage/knowledge.js';
 import type { AudioQualityMeta } from './audioQuality.js';
 import type { ChatMessage } from './providers/llm.js';
 import { buildLlmMessages, streamCompletion } from './providers/llm.js';
@@ -99,15 +100,24 @@ export async function runVoiceTurn(
 
   phase('generating');
   const augStart = performance.now();
-  const augmented = await defaultAugment({
-    transcript,
-    userId: options.userId,
-    sessionId: options.sessionId,
-  });
+  const [augmented, profileSummary] = await Promise.all([
+    defaultAugment({
+      transcript,
+      userId: options.userId,
+      sessionId: options.sessionId,
+    }),
+    isKnowledgeEnabled()
+      ? getUserProfileSummary(options.userId)
+      : Promise.resolve(''),
+  ]);
   timings.augmentMs = Math.round(performance.now() - augStart);
 
+  const systemPrompt = profileSummary
+    ? `${config.systemPrompt}\n\nKnown about this user:\n${profileSummary}`
+    : config.systemPrompt;
+
   const messages = buildLlmMessages(
-    config.systemPrompt,
+    systemPrompt,
     history,
     augmented.text,
   );

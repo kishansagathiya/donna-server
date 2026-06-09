@@ -9,8 +9,11 @@ function openRouterHeaders(): Record<string, string> {
   };
 }
 
-export async function transcribeWav(
-  wav: Uint8Array,
+export type AudioTranscribeFormat = 'wav' | 'mp3' | 'm4a';
+
+export async function transcribeAudio(
+  audio: Uint8Array | Buffer,
+  format: AudioTranscribeFormat,
 ): Promise<{ transcript: string; ms: number }> {
   const start = performance.now();
   const res = await fetch(`${OPENROUTER_BASE}/audio/transcriptions`, {
@@ -19,8 +22,8 @@ export async function transcribeWav(
     body: JSON.stringify({
       model: config.sttModel,
       input_audio: {
-        data: Buffer.from(wav).toString('base64'),
-        format: 'wav',
+        data: Buffer.from(audio).toString('base64'),
+        format,
       },
     }),
   });
@@ -36,4 +39,10 @@ export async function transcribeWav(
     transcript: data.text ?? '',
     ms: Math.round(performance.now() - start),
   };
+}
+
+export async function transcribeWav(
+  wav: Uint8Array,
+): Promise<{ transcript: string; ms: number }> {
+  return transcribeAudio(wav, 'wav');
 }

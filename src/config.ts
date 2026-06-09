@@ -24,6 +24,7 @@ export const config = {
   jwtAudience: process.env.JWT_AUDIENCE ?? 'authenticated',
   requireAuth: !!supabaseUrl,
   persistConversations: !!supabaseUrl && !!supabaseServiceRoleKey,
+  persistKnowledge: !!supabaseUrl && !!supabaseServiceRoleKey,
   openRouterApiKey: required('OPENROUTER_API_KEY'),
   openAiApiKey: process.env.OPENAI_API_KEY ?? '',
   cartesiaApiKey: process.env.CARTESIA_API_KEY ?? '',

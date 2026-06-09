@@ -1,3 +1,8 @@
+import {
+  isKnowledgeEnabled,
+  retrieveFacts,
+} from '../storage/knowledge.js';
+
 export type TranscriptAugmentation = {
   transcript: string;
   text: string;
@@ -28,6 +33,15 @@ export async function defaultAugment(input: {
     transcript: input.transcript,
     text: '',
   };
+
+  if (isKnowledgeEnabled()) {
+    try {
+      base.retrieved = await retrieveFacts(input.userId, input.transcript);
+    } catch {
+      // Retrieval failure should not block the voice turn.
+    }
+  }
+
   base.text = formatAugmentedUserMessage(base);
   return base;
 }

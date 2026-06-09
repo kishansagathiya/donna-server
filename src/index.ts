@@ -5,6 +5,11 @@ import type { WSContext } from 'hono/ws';
 import os from 'node:os';
 import { verifyAccessToken } from './auth.js';
 import { config } from './config.js';
+import {
+  handleKnowledgeFormats,
+  handleKnowledgeIngest,
+} from './knowledge/ingest/handler.js';
+import { requireAuth, type AuthVariables } from './middleware/auth.js';
 import { log } from './log.js';
 import { VoiceSession } from './session.js';
 
@@ -36,7 +41,7 @@ async function verifyVoiceToken(token: string | undefined): Promise<string | nul
   return verified.userId;
 }
 
-const app = new Hono();
+const app = new Hono<{ Variables: AuthVariables }>();
 const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 
 app.get('/health', (c) =>
@@ -46,6 +51,9 @@ app.get('/health', (c) =>
     authRequired: config.requireAuth,
   }),
 );
+
+app.get('/knowledge/formats', handleKnowledgeFormats);
+app.post('/knowledge/ingest', requireAuth, handleKnowledgeIngest);
 
 app.get(
   '/voice',
@@ -113,6 +121,8 @@ log(`voice auth: ${config.requireAuth ? 'required (Supabase JWT)' : 'disabled'}`
 log(
   `conversation persistence: ${config.persistConversations ? 'enabled' : 'disabled'}`,
 );
+log(`knowledge base: ${config.persistKnowledge ? 'enabled' : 'disabled'}`);
+log('knowledge ingest: POST /knowledge/ingest, GET /knowledge/formats');
 log(`voice (simulator): ws://127.0.0.1:${port}/voice`);
 for (const ip of lanAddresses()) {
   log(`voice (physical device): ws://${ip}:${port}/voice`);
