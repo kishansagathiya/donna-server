@@ -30,7 +30,7 @@ export const config = {
   cartesiaApiKey: process.env.CARTESIA_API_KEY ?? '',
   elevenLabsApiKey: process.env.ELEVENLABS_API_KEY ?? '',
   llmModel:
-    process.env.DONNA_LLM_MODEL ?? 'deepseek/deepseek-v4-flash',
+    process.env.DONNA_LLM_MODEL ?? 'deepseek/deepseek-v4-pro',
   sttModel:
     process.env.DONNA_STT_MODEL ?? 'mistralai/voxtral-mini-transcribe',
   systemPrompt:
