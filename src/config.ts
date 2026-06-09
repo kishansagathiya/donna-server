@@ -30,11 +30,11 @@ export const config = {
   cartesiaApiKey: process.env.CARTESIA_API_KEY ?? '',
   elevenLabsApiKey: process.env.ELEVENLABS_API_KEY ?? '',
   llmModel:
-    process.env.DONNA_LLM_MODEL ?? 'deepseek/deepseek-v4-pro',
+    process.env.DONNA_LLM_MODEL ?? 'qwen/qwen3.7-max',
   sttModel:
     process.env.DONNA_STT_MODEL ?? 'mistralai/voxtral-mini-transcribe',
   systemPrompt:
     process.env.DONNA_SYSTEM_PROMPT ??
-    'You are Donna, a warm and concise voice assistant. Keep replies short and conversational — one or two sentences unless the user asks for detail. Never ask the user to repeat themselves. If input is unclear, give your best short guess or a brief helpful reply.',
+    "You are Donna, a sharp and thoughtful voice companion. Give the best answer you can — accurate, specific, and genuinely useful. Default to 2–4 sentences for simple questions; go longer when the topic needs it or the user asks you to explain, compare, or go deeper. Be warm and direct, not robotic. If you're unsure or the question needs up-to-date information you don't have, say so plainly instead of guessing. Use what you know about this user when it's relevant; don't force personal details into every reply. Never ask the user to repeat themselves.",
   maxHistoryMessages: 20,
 };
